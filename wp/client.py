@@ -18,6 +18,7 @@ logger.addHandler(ch)
 class WpClient:
     cache_file = 'cache.json'
     cache_parts_updated = []
+    organizer_parent_cat = 605
     properties = {
         "lsvr_event": {
             "id": {"convert": "copy"},
@@ -26,12 +27,12 @@ class WpClient:
             "slug": {"convert": "copy"},
             "type": {"convert": "copy"},
             "link": {"convert": "copy"},
+            "status": {"convert": "copy"},
             "title.rendered": {"convert": "unescape", "name": "title"},
             "content.rendered": {"convert": "unescape", "name": "content"},
             "excerpt.rendered": {"convert": "unescape", "name": "excerpt"},
             "dd_to_publish_as_showcase": {"convert": "copy"},
             "authorName": {"convert": "copy"},
-            "status": {"convert": "copy"},
             "allDayEvent": {"convert": "copy"},
             "startTimeLong": {"convert": "copy"},
             "endTimeLong": {"convert": "copy"},
@@ -50,6 +51,23 @@ class WpClient:
             "title.rendered": {"convert": "unescape", "name": "title"},
             "caption.rendered": {"convert": "unescape", "name": "caption"},
             "description.rendered": {"convert": "unescape", "name": "description"},
+        },
+        "posts": {
+            "id": {"convert": "copy"},
+            "date_gmt": {"convert": "copy"},
+            "modified_gmt": {"convert": "copy"},
+            "slug": {"convert": "copy"},
+            "type": {"convert": "copy"},
+            "link": {"convert": "copy"},
+            "status": {"convert": "copy"},
+            "sticky": {"convert": "copy"},
+            "title.rendered": {"convert": "unescape", "name": "title"},
+            "content.rendered": {"convert": "unescape", "name": "content"},
+            "excerpt.rendered": {"convert": "unescape", "name": "excerpt"},
+            "dd_to_publish_as_showcase": {"convert": "copy"},
+            "authorName": {"convert": "copy"},
+            "featured_media": {"convert": "resolve_media"},
+            "_links.wp:attachment": {"convert": "resolve_attachments", "name": "attachments"},
         }
     }
 
@@ -59,17 +77,13 @@ class WpClient:
         self.token = base64.b64encode(credentials.encode())
         self.headers = {'Authorization': 'Basic ' + self.token.decode('utf-8')}
 
-        # refresh some values we might need
-        #self.categories = self._get("categories")
-
         self.cache = {
+            "categories": {},
+            "tags": {},
             "lsvr_event_cat": {},
             "lsvr_event_tag": {}
         }
         self.read_cache()
-
-    def __del__(self):
-        self.write_cache()
 
     def read_cache(self):
         if exists(self.cache_file):
@@ -81,40 +95,74 @@ class WpClient:
             with open(self.cache_file, 'w') as f:
                 f.write(json.dumps(self.cache, indent=4))
 
-    def get_event_category(self, id):
-        if str(id) not in self.cache["lsvr_event_cat"]:
-            # update cache
-            self.update_event_category_cache()
-        if str(id) in self.cache["lsvr_event_cat"]:
-            return self.cache["lsvr_event_cat"][str(id)]
-        else:
-            return None
+    def get_category(self, uid):
+        return self._get_ref("categories", uid)
 
-    def update_event_category_cache(self):
-        if "lsvr_event_cat" not in self.cache_parts_updated:
-            data = {}
-            logger.debug("Updating event category cache")
-            for entry in self.get_event_categories():
-                data[str(entry["id"])] = entry
-            self.cache["lsvr_event_cat"] = data
-            self.cache_parts_updated.append("lsvr_event_cat")
+    def get_tag(self, uid):
+        return self._get_ref("tags", uid)
+
+    def get_event_category(self, uid):
+        return self._get_ref("lsvr_event_cat", uid)
+
+    def get_event_tag(self, uid):
+        return self._get_ref("lsvr_event_tag", uid)
 
     def get_posts(self):
-        return self._get("posts")
+        posts = []
+        for post in self._get("posts"):
+            p = {
+                "categories": [],
+                "tags": []
+            }
+            for cat_id in post["categories"]:
+                cat = self.get_category(cat_id)
+                if cat is not None:
+                    p["categories"].append(cat["name"])
+                else:
+                    logger.warning("category %d unknown" % cat_id)
+            for tag_id in post["tags"]:
+                tag = self.get_tag(tag_id)
+                if tag is not None:
+                    p["tags"].append(tag["name"])
+                else:
+                    logger.warning("tag %d unknown" % tag_id)
+            self._copy_properties("posts", post, p)
+            posts.append(p)
+        return posts
 
     def get_events(self):
         events = []
         for event in self._get("lsvr_event"):
             ev = {
                 "categories": [],
-                "tags": []
+                "tags": [],
+                "organizer": []
             }
             for cat_id in event["lsvr_event_cat"]:
                 cat = self.get_event_category(cat_id)
                 if cat is not None:
-                    ev["categories"].append(cat["name"])
+                    if cat["parent"] == self.organizer_parent_cat:
+                        ev["organizer"].append(cat["name"])
+                    else:
+                        is_organizer = False
+                        if cat["parent"] > 0:
+                            parent = cat
+                            while parent["parent"] > 0:
+                                parent = self.get_event_category(parent["parent"])
+                                if parent["parent"] == self.organizer_parent_cat:
+                                    ev["organizer"].append(parent["name"])
+                                    is_organizer = True
+                                    break
+                        if not is_organizer:
+                            ev["categories"].append(cat["name"])
                 else:
                     logger.warning("event category %d unknown" % cat_id)
+            for tag_id in event["lsvr_event_tag"]:
+                tag = self.get_tag(tag_id)
+                if tag is not None:
+                    event["tags"].append(tag["name"])
+                else:
+                    logger.warning("tag %d unknown" % tag_id)
             self._copy_properties("lsvr_event", event, ev)
             events.append(ev)
         return events
@@ -166,18 +214,32 @@ class WpClient:
                     target[property_name] = media_data
 
     def resolve_media(self, media_id):
-        data = self._get("media/%s" % media_id)
-        return data if data is not None else None
-
-    def get_event_categories(self):
-        return self._get("lsvr_event_cat", per_page=100)
-
-    def get_event_tags(self):
-        return self._get("lsvr_event_tag", per_page=100)
+        if media_id > 0:
+            data = self._get("media/%s" % media_id)
+            return data if data is not None else None
+        return None
 
     # keine rechte
     def get_event_locations(self):
         return self._get("taxonomies/lsvr_event_location", True)
+
+    def _get_ref(self, type_name, uid):
+        if type_name not in self.cache or str(uid) not in self.cache[type_name]:
+            # update cache
+            self._update_cache(type_name)
+        if str(uid) in self.cache[type_name]:
+            return self.cache[type_name][str(uid)]
+        else:
+            return None
+
+    def _update_cache(self, type_name):
+        if type_name not in self.cache_parts_updated:
+            data = {}
+            logger.debug("Updating %s cache" % type_name)
+            for entry in self._get(type_name, per_page=100):
+                data[str(entry["id"])] = entry
+            self.cache[type_name] = data
+            self.cache_parts_updated.append(type_name)
 
     @cache
     def _get(self, endpoint, auth=False, per_page=0, page=0, offset=0):
