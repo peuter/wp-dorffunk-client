@@ -19,6 +19,7 @@ class WpClient:
     cache_file = 'cache.json'
     cache_parts_updated = []
     organizer_parent_cat = 605
+    use_cache = True
     properties = {
         "lsvr_event": {
             "id": {"convert": "copy"},
@@ -71,19 +72,22 @@ class WpClient:
         }
     }
 
-    def __init__(self, api_url, user, password):
+    def __init__(self, api_url, user, password, args):
         self.api_url = api_url
         credentials = user + ":" + password
         self.token = base64.b64encode(credentials.encode())
         self.headers = {'Authorization': 'Basic ' + self.token.decode('utf-8')}
-
+        if args.no_cache is True:
+            self.use_cache = False
         self.cache = {
             "categories": {},
             "tags": {},
             "lsvr_event_cat": {},
             "lsvr_event_tag": {}
         }
-        self.read_cache()
+
+        if self.use_cache:
+            self.read_cache()
 
     def read_cache(self):
         if exists(self.cache_file):
@@ -91,7 +95,7 @@ class WpClient:
                 self.cache = json.load(f)
 
     def write_cache(self):
-        if len(self.cache_parts_updated) > 0:
+        if len(self.cache_parts_updated) > 0 and self.use_cache:
             with open(self.cache_file, 'w') as f:
                 f.write(json.dumps(self.cache, indent=4))
 
@@ -106,6 +110,9 @@ class WpClient:
 
     def get_event_tag(self, uid):
         return self._get_ref("lsvr_event_tag", uid)
+
+    def get_user(self, uid):
+        return self._get_ref("users", uid)
 
     def get_posts(self):
         posts = []
@@ -126,6 +133,9 @@ class WpClient:
                     p["tags"].append(tag["name"])
                 else:
                     logger.warning("tag %d unknown" % tag_id)
+            author = self.get_user(post["author"])
+            if author is not None:
+                p["author"] = author["name"]
             self._copy_properties("posts", post, p)
             posts.append(p)
         return posts
@@ -164,6 +174,11 @@ class WpClient:
                 else:
                     logger.warning("tag %d unknown" % tag_id)
             self._copy_properties("lsvr_event", event, ev)
+            if ("authorName" not in ev or len(ev["authorName"]) == 0) and event["author"] > 0:
+                # use username as fallback
+                author = self.get_user(event["author"])
+                if author is not None:
+                    ev["authorName"] = author["name"]
             events.append(ev)
         return events
 
