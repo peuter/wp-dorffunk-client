@@ -12,5 +12,6 @@ WORDPRESS_PASSWORD = os.getenv('WORDPRESS_PASSWORD')
 
 if __name__ == '__main__':
     client = WpClient(API_URL, WORDPRESS_USER, WORDPRESS_PASSWORD)
-    print(json.dumps(client.get_posts(), indent=4))
+    # print(json.dumps(client.get_posts(), indent=4))
     print(json.dumps(client.get_events(), indent=4))
+    #print(json.dumps(client.get_event_locations(), indent=4))

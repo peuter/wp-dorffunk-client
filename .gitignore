@@ -2,3 +2,4 @@
 .idea
 TODO.md
 .env
+/cache.json
