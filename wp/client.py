@@ -5,7 +5,7 @@ import logging
 import requests
 import base64
 from os.path import exists
-from wp.log_formatter import ColoredFormatter
+from dorffunk.wp.log_formatter import ColoredFormatter
 
 logger = logging.getLogger("WpClient")
 logger.setLevel(logging.DEBUG)
@@ -72,13 +72,12 @@ class WpClient:
         }
     }
 
-    def __init__(self, api_url, user, password, args):
+    def __init__(self, api_url, user, password, use_cache=True):
         self.api_url = api_url
         credentials = user + ":" + password
         self.token = base64.b64encode(credentials.encode())
         self.headers = {'Authorization': 'Basic ' + self.token.decode('utf-8')}
-        if args.no_cache is True:
-            self.use_cache = False
+        self.use_cache = use_cache
         self.cache = {
             "categories": {},
             "tags": {},
