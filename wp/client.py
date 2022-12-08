@@ -1,6 +1,6 @@
 import json
 import html
-from functools import cache
+from functools import lru_cache
 import logging
 import requests
 import base64
@@ -255,7 +255,7 @@ class WpClient:
             self.cache[type_name] = data
             self.cache_parts_updated.append(type_name)
 
-    @cache
+    @lru_cache
     def _get(self, endpoint, auth=False, per_page=0, page=0, offset=0):
         params = {}
         if per_page > 0:
