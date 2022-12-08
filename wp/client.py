@@ -255,7 +255,7 @@ class WpClient:
             self.cache[type_name] = data
             self.cache_parts_updated.append(type_name)
 
-    @lru_cache
+    @lru_cache(maxsize=None)
     def _get(self, endpoint, auth=False, per_page=0, page=0, offset=0):
         params = {}
         if per_page > 0:
